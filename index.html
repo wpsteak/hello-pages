@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>今天中午吃什麼？</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #fffaf0;
+        }
+
+        .spinner-active {
+            transition: all 0.1s ease-out;
+        }
+
+        .food-card {
+            transition: all 0.3s ease;
+        }
+
+        .food-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 隱藏捲軸 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* 紀錄列表動畫 */
+        .history-item {
+            animation: slideIn 0.3s ease-out forwards;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-10px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        /* 最近排除標籤 */
+        .excluded-badge {
+            font-size: 0.65rem;
+            background: #fee2e2;
+            color: #ef4444;
+            padding: 1px 5px;
+            border-radius: 4px;
+            margin-left: 4px;
+        }
+    </style>
+</head>
+<body class="min-h-screen pb-12">
+
+    <!-- Header -->
+    <header class="bg-orange-500 text-white py-8 px-4 text-center shadow-lg">
+        <h1 class="text-3xl md:text-4xl font-bold mb-2">🍱 今天中午吃什麼？</h1>
+        <p class="opacity-90">終結選擇困難，讓演算法為你的胃負責！</p>
+    </header>
+
+    <main class="max-w-2xl mx-auto px-4 mt-8">
+        
+        <!-- 決策展示區 -->
+        <div class="bg-white rounded-3xl shadow-xl p-8 text-center mb-8 border-4 border-orange-100">
+            <div id="result-display" class="h-32 flex items-center justify-center mb-6 overflow-hidden">
+                <span id="food-name" class="text-4xl md:text-5xl font-bold text-orange-600 transition-all duration-75">準備好了嗎？</span>
+            </div>
+            
+            <button id="spin-btn" class="w-full md:w-64 bg-orange-500 hover:bg-orange-600 text-white text-xl font-bold py-4 px-8 rounded-full shadow-lg transform transition active:scale-95 focus:outline-none disabled:bg-gray-400">
+                幫我選一個！
+            </button>
+            <p id="logic-hint" class="text-xs text-gray-400 mt-4 italic">已啟動：前三次抽過的項目將暫時排除</p>
+        </div>
+
+        <!-- 抽籤紀錄 -->
+        <div id="history-section" class="mb-8 hidden">
+            <h3 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">最近抽到：</h3>
+            <div id="history-list" class="flex flex-wrap gap-2">
+                <!-- 紀錄項目 -->
+            </div>
+        </div>
+
+        <!-- 類別篩選 -->
+        <div class="mb-8">
+            <h3 class="text-lg font-bold text-gray-700 mb-4">想要哪種類型？</h3>
+            <div class="flex flex-wrap gap-2">
+                <button onclick="filterCategory('all')" class="category-btn active bg-orange-100 text-orange-700 px-4 py-2 rounded-full font-medium transition hover:bg-orange-200">全部</button>
+                <button onclick="filterCategory('米飯')" class="category-btn bg-gray-100 text-gray-600 px-4 py-2 rounded-full font-medium transition hover:bg-gray-200">便當/飯類</button>
+                <button onclick="filterCategory('麵食')" class="category-btn bg-gray-100 text-gray-600 px-4 py-2 rounded-full font-medium transition hover:bg-gray-200">麵食/水餃</button>
+                <button onclick="filterCategory('速食')" class="category-btn bg-gray-100 text-gray-600 px-4 py-2 rounded-full font-medium transition hover:bg-gray-200">速食/炸雞</button>
+                <button onclick="filterCategory('日式')" class="category-btn bg-gray-100 text-gray-600 px-4 py-2 rounded-full font-medium transition hover:bg-gray-200">日韓料理</button>
+                <button onclick="filterCategory('輕食')" class="category-btn bg-gray-100 text-gray-600 px-4 py-2 rounded-full font-medium transition hover:bg-gray-200">輕食/沙拉</button>
+            </div>
+        </div>
+
+        <!-- 名單管理區 -->
+        <div class="bg-white rounded-2xl shadow-md p-6">
+            <div class="flex justify-between items-center mb-4 border-b pb-4">
+                <h3 class="text-lg font-bold text-gray-700">我的口袋名單 (<span id="count">0</span>)</h3>
+                <button onclick="toggleAddModal()" class="bg-orange-100 text-orange-600 px-3 py-1 rounded-lg font-bold text-sm hover:bg-orange-200">+ 新增</button>
+            </div>
+            
+            <div id="food-list" class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <!-- 由 JS 動態生成 -->
+            </div>
+        </div>
+    </main>
+
+    <!-- 新增食物的彈窗 -->
+    <div id="add-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <h3 class="text-xl font-bold mb-4 text-gray-800">新增想吃的食物</h3>
+            <input type="text" id="new-food-name" placeholder="例如：牛肉麵" class="w-full border-2 border-gray-100 rounded-lg p-3 mb-4 focus:border-orange-500 outline-none">
+            <select id="new-food-category" class="w-full border-2 border-gray-100 rounded-lg p-3 mb-6 focus:border-orange-500 outline-none text-gray-600">
+                <option value="米飯">便當/飯類</option>
+                <option value="麵食">麵食/水餃</option>
+                <option value="速食">速食/炸雞</option>
+                <option value="日式">日韓料理</option>
+                <option value="輕食">輕食/沙拉</option>
+            </select>
+            <div class="flex gap-3">
+                <button onclick="toggleAddModal()" class="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-bold">取消</button>
+                <button onclick="addNewFood()" class="flex-1 bg-orange-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-orange-200">確認新增</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 訊息提示 -->
+    <div id="toast" class="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full opacity-0 transition-opacity duration-300 pointer-events-none z-50">
+        提示訊息
+    </div>
+
+    <script>
+        const defaultFoods = [
+            { name: "池上便當", category: "米飯" }, { name: "牛肉麵", category: "麵食" },
+            { name: "麥當勞", category: "速食" }, { name: "拉麵", category: "日式" },
+            { name: "路易莎沙拉", category: "輕食" }, { name: "便利商店", category: "輕食" },
+            { name: "肯德基", category: "速食" }, { name: "火雞肉飯", category: "米飯" },
+            { name: "韓式炸雞", category: "日式" }, { name: "八方雲集", category: "麵食" },
+            { name: "滷肉飯", category: "米飯" }, { name: "義大利麵", category: "麵食" },
+            { name: "壽司", category: "日式" }, { name: "潛艇堡", category: "輕食" }
+        ];
+
+        let foods = [...defaultFoods];
+        let currentFilter = 'all';
+        let recentWinners = []; // 儲存最近 3 次的結果
+        let history = [];
+
+        const resultDisplay = document.getElementById('food-name');
+        const spinBtn = document.getElementById('spin-btn');
+        const foodListContainer = document.getElementById('food-list');
+        const countDisplay = document.getElementById('count');
+        const modal = document.getElementById('add-modal');
+        const toast = document.getElementById('toast');
+        const historySection = document.getElementById('history-section');
+        const historyList = document.getElementById('history-list');
+
+        function init() {
+            renderList();
+        }
+
+        function renderList() {
+            foodListContainer.innerHTML = '';
+            const filtered = currentFilter === 'all' ? foods : foods.filter(f => f.category === currentFilter);
+            
+            filtered.forEach((food, index) => {
+                const card = document.createElement('div');
+                const isExcluded = recentWinners.includes(food.name);
+                card.className = `food-card p-3 rounded-xl text-sm font-medium flex justify-between items-center ${isExcluded ? 'bg-gray-100 text-gray-400 opacity-60' : 'bg-orange-50 text-orange-800'}`;
+                card.innerHTML = `
+                    <div class="flex items-center truncate pr-2">
+                        <span class="truncate">${food.name}</span>
+                        ${isExcluded ? '<span class="excluded-badge shrink-0">剛吃過</span>' : ''}
+                    </div>
+                    <button onclick="removeFood('${food.name}')" class="text-orange-300 hover:text-red-500 transition shrink-0 ml-1">✕</button>
+                `;
+                foodListContainer.appendChild(card);
+            });
+            countDisplay.innerText = filtered.length;
+        }
+
+        function filterCategory(cat) {
+            currentFilter = cat;
+            document.querySelectorAll('.category-btn').forEach(btn => {
+                btn.classList.remove('bg-orange-100', 'text-orange-700');
+                btn.classList.add('bg-gray-100', 'text-gray-600');
+                if (btn.innerText.includes(cat === 'all' ? '全部' : cat)) {
+                    btn.classList.add('bg-orange-100', 'text-orange-700');
+                    btn.classList.remove('bg-gray-100', 'text-gray-600');
+                }
+            });
+            renderList();
+        }
+
+        function spin() {
+            let filtered = currentFilter === 'all' ? [...foods] : foods.filter(f => f.category === currentFilter);
+            
+            if (filtered.length === 0) {
+                showToast('這個分類下沒有食物喔！');
+                return;
+            }
+
+            // --- 核心機制：排除最近 3 次抽過的項目 ---
+            // 如果名單夠長（> 3個），就嚴格執行排除 3 個；否則動態調整排除數量，避免無項目可抽
+            let exclusionCount = Math.min(recentWinners.length, filtered.length - 1);
+            // 限制最多排除 3 個
+            exclusionCount = Math.min(exclusionCount, 3);
+            
+            const activeExcluded = recentWinners.slice(0, exclusionCount);
+            let pool = filtered.filter(f => !activeExcluded.includes(f.name));
+
+            if (pool.length === 0) pool = filtered; // 極端情況保險
+
+            spinBtn.disabled = true;
+            resultDisplay.classList.add('scale-110');
+
+            let rounds = 0;
+            const totalRounds = 30 + Math.floor(Math.random() * 10);
+            let delay = 40; 
+            
+            const performSpin = () => {
+                // 動畫過程中可以顯示所有選項增加動感
+                const displayPool = filtered; 
+                const randomIdx = Math.floor(Math.random() * displayPool.length);
+                const currentPick = displayPool[randomIdx].name;
+                resultDisplay.innerText = currentPick;
+                
+                rounds++;
+                
+                if (rounds < totalRounds) {
+                    if (rounds > totalRounds * 0.7) {
+                        delay += 25;
+                    }
+                    setTimeout(performSpin, delay);
+                } else {
+                    // 最終決定從「排除後」的池子裡選出
+                    const finalIdx = Math.floor(Math.random() * pool.length);
+                    finalizeSelection(pool[finalIdx].name);
+                }
+            };
+
+            performSpin();
+        }
+
+        function finalizeSelection(winner) {
+            // 更新最近 3 次紀錄陣列
+            recentWinners.unshift(winner); // 加到最前面
+            if (recentWinners.length > 3) {
+                recentWinners.pop(); // 超過 3 個就移除最舊的
+            }
+
+            resultDisplay.innerText = winner;
+            resultDisplay.classList.remove('scale-110');
+            resultDisplay.classList.add('text-green-600');
+            
+            addToHistory(winner);
+            renderList(); // 更新列表顯示狀態（標示哪些被排除了）
+            
+            setTimeout(() => {
+                resultDisplay.classList.remove('text-green-600');
+                spinBtn.disabled = false;
+                spinBtn.innerText = '再抽一次！';
+            }, 600);
+        }
+
+        function addToHistory(name) {
+            historySection.classList.remove('hidden');
+            const item = document.createElement('div');
+            item.className = 'history-item bg-orange-100 text-orange-600 text-xs px-2 py-1 rounded border border-orange-200';
+            item.innerText = name;
+            
+            historyList.prepend(item);
+            if (historyList.children.length > 15) {
+                historyList.removeChild(historyList.lastChild);
+            }
+        }
+
+        function toggleAddModal() {
+            modal.classList.toggle('hidden');
+            if (!modal.classList.contains('hidden')) {
+                document.getElementById('new-food-name').focus();
+            }
+        }
+
+        function addNewFood() {
+            const nameInput = document.getElementById('new-food-name');
+            const categorySelect = document.getElementById('new-food-category');
+            const name = nameInput.value.trim();
+            
+            if (!name) { showToast('請輸入名稱'); return; }
+            if (foods.some(f => f.name === name)) { showToast('已經在名單中囉！'); return; }
+
+            foods.push({ name, category: categorySelect.value });
+            nameInput.value = '';
+            toggleAddModal();
+            renderList();
+            showToast('已加入！');
+        }
+
+        function removeFood(name) {
+            foods = foods.filter(f => f.name !== name);
+            recentWinners = recentWinners.filter(n => n !== name);
+            renderList();
+        }
+
+        function showToast(msg) {
+            toast.innerText = msg;
+            toast.style.opacity = '1';
+            setTimeout(() => toast.style.opacity = '0', 2000);
+        }
+
+        spinBtn.addEventListener('click', spin);
+        init();
+    </script>
+</body>
+</html>
